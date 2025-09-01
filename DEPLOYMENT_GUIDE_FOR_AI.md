@@ -13,7 +13,7 @@ The FreshShare application uses a dual-server architecture (Express frontend + F
 ### 2. Deployment Preparation
 
 - Used `git push` to sync local changes with the GitHub repository
-- Pushed to `restore_branch` which triggers the GitHub Actions workflow
+- `git push -u origin main` which triggers the GitHub Actions workflow
 - The workflow is configured to deploy when pushes occur to this specific branch
 
 ### 3. GitHub Actions Workflow Execution
@@ -101,6 +101,24 @@ The deployment includes robust error handling:
 - Fallback mechanisms for Node.js path detection
 - Automated recovery through cron jobs
 
+### GitHub Actions Docker Errors
+
+If you encounter errors like `Error: missing server host` in GitHub Actions, check the following:
+
+1. **GitHub Secrets Configuration**: Ensure all required secrets are properly set in GitHub repository settings.
+   - Navigate to your repository → Settings → Secrets and variables → Actions → Repository secrets
+   - Verify these critical secrets exist: `SERVER_HOST`, `SERVER_USER`, and `SERVER_PASS`
+   - For the `SERVER_HOST` value, use your cPanel hostname (e.g., premium149.web-hosting.com)
+
+2. **Docker Command Execution**: When GitHub Actions displays errors like:
+
+   ```bash
+   /usr/bin/docker run --name [container-id] ... -e "INPUT_HOST" -e "INPUT_USERNAME" -e "INPUT_PASSWORD" ...
+   Error: missing server host
+   ```
+
+   This indicates that the SSH action cannot access the required secrets.
+
 ## Implementation Details
 
 The deployment leverages GitHub secrets for sensitive configuration, ensuring database credentials and SSH keys remain secure. The dual-server architecture separates concerns between the frontend user interface (Express) and the backend API (Fastify), with proper communication between them.
@@ -110,12 +128,13 @@ Both synchronous deployment (via GitHub Actions) and manual deployment options a
 ## For AI Assistants: Understanding Key Workflow Components
 
 ### GitHub Workflow Structure
+
 ```yaml
 name: Deploy to cPanel
 
 on:
   push:
-    branches: [ restore_branch ]
+    branches: [ main ]
   workflow_dispatch:
     # Allow manual triggering
 
@@ -127,8 +146,17 @@ jobs:
     # ... (additional steps)
 ```
 
-### SSH Key Management
-The workflow uses SSH keys stored in GitHub secrets to securely connect to the cPanel server. The private key is retrieved from secrets and properly formatted for SSH authentication.
+### GitHub Secrets for Deployment
+The workflow uses GitHub secrets to securely connect to the cPanel server. The following secrets must be configured in your GitHub repository:
+
+1. **SERVER_HOST**: Your cPanel server hostname (e.g., premium149.web-hosting.com)
+2. **SERVER_USER**: Your cPanel username (e.g., myfrovov)
+3. **SERVER_PASS**: Your cPanel password
+4. **MONGODB_URI**: Connection string to your MongoDB database
+5. **JWT_SECRET**: Secret key for JWT authentication
+6. **DATABASE_URL**: Connection string to your PostgreSQL database
+7. **BASE_URL**: Deployment path (empty for root deployment or '/subdirectory' for subdirectory)
+8. **USDA_API_KEY**: API key for USDA services
 
 ### Environment File Creation
 Environment files (.env) are created dynamically during the workflow execution, with sensitive values injected from GitHub secrets:

@@ -36,10 +36,10 @@ git add .
 git commit -m "Clean repository for production deployment with CSS fixes"
 
 # Step 4: Push to restore_branch to trigger GitHub Actions workflow
-git push origin restore_branch
+git push origin main
 ```
 
-This push will automatically trigger the GitHub Actions workflow defined in `.github/workflows/deploy-with-secrets-fixed-new.yml`.
+This push will automatically trigger the GitHub Actions workflow defined in `.github/workflows/deploy-with-secrets-fixed.yml`.
 
 ### 3. GitHub Actions Workflow Process
 
@@ -105,8 +105,8 @@ cd /d D:\Users\gabep\Desktop\Freshshare1,4\FreshShare1.3
 git config --global user.name "FreshShare Deploy"
 git config --global user.email "deploy@freshshare.local"
 
-# Step 3: Make sure you're on the restore_branch
-git checkout -b restore_branch 2>nul || git checkout restore_branch
+# Step 3: Make sure you're on the main branch
+git checkout -b main 2>nul || git checkout main
 
 # Step 4: Add the modified files
 git add mongodb-bypass.js
@@ -136,7 +136,27 @@ These changes fix the following issues:
 3. Workflow hanging during MongoDB connection tests
 4. Corrupted SSH script sections in the workflow file
 
-### 7. Troubleshooting
+### 7. Required GitHub Secrets
+
+Before deploying, ensure these GitHub secrets are configured in your repository:
+
+1. **SERVER_HOST**: Your cPanel server hostname (e.g., premium149.web-hosting.com)
+2. **SERVER_USER**: Your cPanel username (e.g., myfrovov)
+3. **SERVER_PASS**: Your cPanel password
+4. **MONGODB_URI**: MongoDB connection string
+5. **JWT_SECRET**: Secret for JWT tokens
+6. **DATABASE_URL**: PostgreSQL connection string
+7. **BASE_URL**: Deployment path (empty for root or '/subdirectory')
+8. **USDA_API_KEY**: API key for USDA services
+
+To add these secrets:
+
+1. Go to your GitHub repository
+2. Navigate to Settings → Secrets and variables → Actions
+3. Click "New repository secret"
+4. Add each secret with its exact name and value
+
+### 8. Troubleshooting
 
 If deployment issues occur:
 - Check GitHub Actions logs for errors

@@ -16,8 +16,8 @@ if not exist .git (
     git remote add origin https://github.com/Ch3fC0d3/FreshShare2.1.git
 )
 
-REM Create and switch to restore_branch
-git checkout -b restore_branch 2>nul || git checkout restore_branch
+REM Create and switch to main branch
+git checkout -b main 2>nul || git checkout main
 
 echo Adding all project files...
 git add .
@@ -39,7 +39,7 @@ git commit -m "fix: MongoDB dependency, workflow issues, and 503 error resolutio
 - Fix Apache proxy configuration in .htaccess for proper routing"
 
 echo Pushing to GitHub...
-git push -u origin restore_branch
+git push -u origin main
 
 echo Done!
 pause
