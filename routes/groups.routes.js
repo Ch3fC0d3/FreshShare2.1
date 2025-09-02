@@ -1,85 +1,63 @@
 const express = require('express');
 const router = express.Router();
-const { authJwt } = require('../middleware');
+const { requireAuthForApi } = require('../middleware/authJwt');
 const groupController = require('../controllers/group.controller');
-
-// Apply authentication middleware to specific routes instead of all routes
-// This allows group creation without authentication for debugging purposes
 
 // ===== GROUP MANAGEMENT =====
 
-// Create a new group
-router.post('/', groupController.createGroup);
+// Create a new group (protected)
+router.post('/', requireAuthForApi, groupController.createGroup);
 
-// Get all groups
+// Get all groups (public)
 router.get('/', groupController.getAllGroups);
 
-// Get a specific group
+// Get a specific group (public)
 router.get('/:id', groupController.getGroupById);
 
-// Update a group
-router.put('/:id', groupController.updateGroup);
+// Update a group (protected)
+router.put('/:id', requireAuthForApi, groupController.updateGroup);
 
-// Delete a group
-router.delete('/:id', groupController.deleteGroup);
+// Delete a group (protected)
+router.delete('/:id', requireAuthForApi, groupController.deleteGroup);
 
 // ===== MEMBERSHIP MANAGEMENT =====
 
-// Join a group
-router.post('/:id/join', groupController.joinGroup);
+// Join a group (protected)
+router.post('/:id/join', requireAuthForApi, groupController.joinGroup);
 
-// Leave a group
-router.post('/:id/leave', groupController.leaveGroup);
+// Leave a group (protected)
+router.post('/:id/leave', requireAuthForApi, groupController.leaveGroup);
 
-// Get group members
-router.get('/:id/members', groupController.getGroupMembers);
+// Get group members (protected)
+router.get('/:id/members', requireAuthForApi, groupController.getGroupMembers);
 
-// Invite a user to the group
-router.post('/:id/invite', groupController.inviteToGroup);
+// Invite a user to the group (protected)
+router.post('/:id/invite', requireAuthForApi, groupController.inviteToGroup);
 
-// ===== SHOPPING LIST MANAGEMENT =====
+// ===== SHOPPING LIST MANAGEMENT (all protected) =====
 
-// Get shopping list
-router.get('/:id/shopping-list', groupController.getShoppingList);
+router.get('/:id/shopping-list', requireAuthForApi, groupController.getShoppingList);
+router.post('/:id/shopping-list', requireAuthForApi, groupController.addShoppingListItem);
+router.put('/:id/shopping-list/:itemId', requireAuthForApi, groupController.updateShoppingListItem);
+router.delete('/:id/shopping-list/:itemId', requireAuthForApi, groupController.deleteShoppingListItem);
 
-// Add item to shopping list
-router.post('/:id/shopping-list', groupController.addShoppingListItem);
+// ===== DISCUSSION BOARD (all protected) =====
 
-// Update shopping list item
-router.put('/:id/shopping-list/:itemId', groupController.updateShoppingListItem);
+router.get('/:id/messages', requireAuthForApi, groupController.getMessages);
+router.post('/:id/messages', requireAuthForApi, groupController.addMessage);
+router.delete('/:id/messages/:messageId', requireAuthForApi, groupController.deleteMessage);
 
-// Delete shopping list item
-router.delete('/:id/shopping-list/:itemId', groupController.deleteShoppingListItem);
+// ===== EVENT MANAGEMENT (all protected) =====
 
-// ===== DISCUSSION BOARD =====
+router.get('/:id/events', requireAuthForApi, groupController.getEvents);
+router.post('/:id/events', requireAuthForApi, groupController.createEvent);
+router.put('/:id/events/:eventId', requireAuthForApi, groupController.updateEvent);
+router.delete('/:id/events/:eventId', requireAuthForApi, groupController.deleteEvent);
 
-// Get messages
-router.get('/:id/messages', groupController.getMessages);
-
-// Add message
-router.post('/:id/messages', groupController.addMessage);
-
-// Delete message
-router.delete('/:id/messages/:messageId', groupController.deleteMessage);
-
-// ===== EVENT MANAGEMENT =====
-
-// Get events
-router.get('/:id/events', groupController.getEvents);
-
-// Create event
-router.post('/:id/events', groupController.createEvent);
-
-// Update event
-router.put('/:id/events/:eventId', groupController.updateEvent);
-
-// Delete event
-router.delete('/:id/events/:eventId', groupController.deleteEvent);
-
-// ===== LEGACY ROUTES (MAINTAINED FOR BACKWARD COMPATIBILITY) =====
+// ===== LEGACY ROUTES (all protected) =====
 
 // Propose a new product
-router.post('/:id/propose-product', async (req, res) => {
+router.post('/:id/propose-product', requireAuthForApi, async (req, res) => {
     try {
         const groupId = req.params.id;
         const product = req.body;
@@ -133,7 +111,7 @@ router.post('/:id/propose-product', async (req, res) => {
 });
 
 // Vote on a proposed product
-router.post('/:groupId/vote/:productId', async (req, res) => {
+router.post('/:groupId/vote/:productId', requireAuthForApi, async (req, res) => {
     try {
         const { groupId, productId } = req.params;
         
@@ -195,7 +173,7 @@ router.post('/:groupId/vote/:productId', async (req, res) => {
 });
 
 // Legacy discussion board route (for backward compatibility)
-router.post('/:id/discussion', async (req, res) => {
+router.post('/:id/discussion', requireAuthForApi, async (req, res) => {
     try {
         // Forward to the new message endpoint
         return groupController.addMessage(req, res);

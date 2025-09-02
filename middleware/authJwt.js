@@ -2,226 +2,149 @@ const jwt = require('jsonwebtoken');
 const db = require('../models');
 const User = db.user;
 
-// Retrieve JWT secret from environment or use a default (in production, always use environment variable)
 const JWT_SECRET = process.env.JWT_SECRET || 'freshShare-auth-secret';
 
 /**
- * Verify JWT token from request headers
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next middleware function
- * @returns {Object} - Continues to next middleware or returns error response
+ * Extracts and decodes JWT from request cookies or headers.
+ * This function does not handle errors, it simply returns null if verification fails.
+ * @param {Object} req - Express request object.
+ * @returns {Object|null} - Decoded token payload or null if not found/invalid.
  */
-const verifyToken = (req, res, next) => {
-  // Get token from request headers (case-insensitive) or cookies
-  const getHeaderCaseInsensitive = (headers, headerName) => {
-    const headerKeys = Object.keys(headers);
-    const key = headerKeys.find(k => k.toLowerCase() === headerName.toLowerCase());
-    return key ? headers[key] : null;
-  };
-  
-  // Enhanced token extraction with detailed logging
+const decodeToken = (req) => {
   let token = null;
-  
-  // Check cookies first (preferred method for web pages)
+
+  // Prefer token from cookie
   if (req.cookies && req.cookies.token) {
     token = req.cookies.token;
-    console.log(`Token found in cookies for ${req.method} ${req.originalUrl}`);
-  } 
-  // Then check authorization header (for API calls)
-  else if (getHeaderCaseInsensitive(req.headers, 'authorization')) {
-    const authHeader = getHeaderCaseInsensitive(req.headers, 'authorization');
-    // Check if it has Bearer prefix and extract token
-    token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
-    console.log(`Token found in Authorization header for ${req.method} ${req.originalUrl}`);
-    
-    // If token is valid, set it as a cookie for future requests
-    try {
-      // Verify token before setting cookie
-      const decoded = jwt.verify(token, JWT_SECRET);
-      if (decoded && decoded.id) {
-        // Set token as cookie
-        res.cookie('token', token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-          sameSite: 'lax',
-          path: '/'
-        });
-        console.log(`Set token cookie from Authorization header for user ID: ${decoded.id}`);
-      }
-    } catch (err) {
-      console.error('Error verifying token from Authorization header:', err.message);
-      // Continue with normal flow, don't set cookie for invalid token
-    }
-  } 
-  // Finally check x-access-token (legacy support)
-  else if (getHeaderCaseInsensitive(req.headers, 'x-access-token')) {
-    token = getHeaderCaseInsensitive(req.headers, 'x-access-token');
-    console.log(`Token found in x-access-token header for ${req.method} ${req.originalUrl}`);
-    
-    // If token is valid, set it as a cookie for future requests
-    try {
-      // Verify token before setting cookie
-      const decoded = jwt.verify(token, JWT_SECRET);
-      if (decoded && decoded.id) {
-        // Set token as cookie
-        res.cookie('token', token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-          sameSite: 'lax',
-          path: '/'
-        });
-        console.log(`Set token cookie from x-access-token header for user ID: ${decoded.id}`);
-      }
-    } catch (err) {
-      console.error('Error verifying token from x-access-token header:', err.message);
-      // Continue with normal flow, don't set cookie for invalid token
-    }
   }
-  
-  // Make authentication optional for the groups API
-  if (req.originalUrl === '/api/groups' && req.method === 'GET') {
-    if (!token) {
-      // For public access to groups, continue without setting userId
-      return next();
-    }
+  // Fallback to Authorization header
+  else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    token = req.headers.authorization.substring(7);
   }
-  
-  // If no token for protected routes, return error
+
   if (!token) {
-    console.log(`No token found for ${req.method} ${req.originalUrl}`);
-    
-    // For API routes, return JSON error
-    if (req.originalUrl.startsWith('/api/')) {
-      return res.status(403).json({
-        success: false,
-        message: 'No token provided!'
-      });
-    }
-    
-    // For web routes, redirect to login
-    return res.redirect('/login?redirect=' + encodeURIComponent(req.originalUrl));
+    return null;
   }
-  
-  // Remove Bearer prefix if present
-  const tokenValue = token.startsWith('Bearer ') ? token.slice(7) : token;
-  
+
   try {
-    // Verify token
-    const decoded = jwt.verify(tokenValue, JWT_SECRET);
-    
-    // Set userId in request
-    req.userId = decoded.id;
-    
-    // Check if token is close to expiration (less than 24 hours remaining)
-    // and renew it if needed
-    if (decoded.exp && decoded.exp - (Date.now() / 1000) < 24 * 60 * 60) {
-      console.log('Token close to expiration, renewing...');
-      
-      // Generate new token with fresh expiration
-      const newToken = jwt.sign({ id: decoded.id }, JWT_SECRET, {
-        expiresIn: 7 * 24 * 60 * 60 // 7 days
-      });
-      
-      // Set new token as cookie
-      res.cookie('token', newToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-        sameSite: 'lax',
-        path: '/'
-      });
-      
-      console.log('Token renewed successfully');
-    }
-    
-    next();
+    // Verify the token and return the decoded payload
+    return jwt.verify(token, JWT_SECRET);
   } catch (error) {
-    console.error('Token verification failed:', error.message);
-    
-    // For public endpoints, continue without authentication
-    if (req.originalUrl === '/api/groups' && req.method === 'GET') {
-      return next();
-    }
-    
-    // For API routes, return JSON error
-    if (req.originalUrl.startsWith('/api/')) {
-      return res.status(401).json({
-        success: false,
-        message: 'Unauthorized! Token is invalid or expired.'
-      });
-    }
-    
-    // For web routes, clear cookie and redirect to login
-    res.clearCookie('token');
-    return res.redirect('/login?redirect=' + encodeURIComponent(req.originalUrl) + 
-                       '&error=' + encodeURIComponent('Your session has expired. Please log in again.'));
+    // Log the error but don't throw, just return null for an invalid token
+    console.error('JWT verification failed:', error.message);
+    return null;
   }
 };
 
 /**
- * Check if request is from an authenticated user
- * Creates middleware that verifies token and validates against database
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next middleware function
- * @returns {Object} - Continues to next middleware or returns error response
+ * Renews the JWT if it's nearing expiration (e.g., within the next 24 hours).
+ * This helps keep the user logged in without interruption.
+ * @param {Object} res - Express response object.
+ * @param {Object} decoded - The decoded JWT payload which includes 'exp' and 'id'.
  */
-const isAuthenticated = async (req, res, next) => {
-  try {
-    // Verify token first
-    verifyToken(req, res, async () => {
-      // Skip user check for public endpoints
-      if (req.originalUrl === '/api/groups' && req.method === 'GET' && !req.userId) {
-        return next();
-      }
-      
-      // Check if user exists
-      const user = await User.findById(req.userId);
-      
-      if (!user) {
-        console.log(`User not found for ID: ${req.userId}`);
-        
-        // For API routes, return JSON error
-        if (req.originalUrl.startsWith('/api/')) {
-          return res.status(404).json({
-            success: false,
-            message: 'User not found!'
-          });
-        }
-        
-        // For web routes, clear cookie and redirect to login
-        res.clearCookie('token');
-        return res.redirect('/login?error=' + encodeURIComponent('User account not found. Please log in again.'));
-      }
-      
-      next();
+const renewTokenIfNecessary = (res, decoded) => {
+  const nowInSeconds = Date.now() / 1000;
+  const oneDayInSeconds = 24 * 60 * 60; // 24 hours
+
+  // Check if the token has an expiration and if it's less than a day away
+  if (decoded.exp && (decoded.exp - nowInSeconds < oneDayInSeconds)) {
+    console.log(`Token for user ${decoded.id} is nearing expiration. Renewing...`);
+
+    const newToken = jwt.sign({ id: decoded.id }, JWT_SECRET, {
+      expiresIn: '7d' // Renew for another 7 days
     });
-  } catch (error) {
-    console.error('Authentication error:', error.message);
-    
-    // For API routes, return JSON error
-    if (req.originalUrl.startsWith('/api/')) {
-      return res.status(500).json({
-        success: false,
-        message: 'An error occurred while authenticating user.',
-        error: error.message
-      });
+
+    // Set the new token in the cookie
+    res.cookie('token', newToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+      sameSite: 'lax',
+      path: '/'
+    });
+    console.log('Token renewed successfully.');
+  }
+};
+
+/**
+ * Global middleware to universally handle user authentication state.
+ * It decodes the token, fetches the user, and attaches them to `req.user` and `res.locals.user`.
+ * This middleware is NON-PROTECTIVE; it simply makes user info available if they are logged in.
+ */
+const addUserToRequestAndLocals = async (req, res, next) => {
+  const decoded = decodeToken(req);
+
+  if (decoded && decoded.id) {
+    try {
+      const user = await User.findById(decoded.id).select('-password');
+      if (user) {
+        // Attach user to the request object for use in protected routes
+        req.user = user;
+        // Attach user to response locals for use in EJS templates
+        res.locals.user = user;
+        
+        // Check if the token needs renewal
+        renewTokenIfNecessary(res, decoded);
+      }
+    } catch (error) {
+      console.error('Error fetching user during authentication:', error);
     }
-    
-    // For web routes, redirect to error page
-    return res.status(500).render('error', {
-      title: 'Authentication Error',
-      message: 'An error occurred during authentication. Please try again later.'
-    });
+  }
+
+  // Always continue to the next middleware
+  next();
+};
+
+/**
+ * Protective middleware for WEB PAGES.
+ * It checks if a user is authenticated and redirects to the login page if not.
+ * This middleware MUST run *after* `addUserToRequestAndLocals`.
+ */
+const requireAuthForPage = (req, res, next) => {
+  if (req.user) {
+    // If user is attached to the request, they are authenticated.
+    return next();
+  }
+
+  // If no user, redirect to login, preserving the intended destination.
+  res.redirect(`/login?redirect=${encodeURIComponent(req.originalUrl)}&error=Please+log+in+to+view+this+page`);
+};
+
+/**
+ * Protective middleware for API ENDPOINTS.
+ * It checks for a valid token and an existing user, returning a JSON error if authentication fails.
+ */
+const requireAuthForApi = async (req, res, next) => {
+  const decoded = decodeToken(req);
+
+  if (!decoded || !decoded.id) {
+    return res.status(403).json({ success: false, message: 'Authentication failed. No token provided.' });
+  }
+
+  try {
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized. User not found.' });
+    }
+
+    // Attach user and userId to the request for use in controllers
+    req.user = user;
+    req.userId = user._id;
+
+    // Check if the token needs renewal
+    renewTokenIfNecessary(res, decoded);
+
+    next();
+  } catch (error) {
+    console.error('API authentication error:', error);
+    return res.status(500).json({ success: false, message: 'Server error during API authentication.' });
   }
 };
 
 const authJwt = {
-  verifyToken,
-  isAuthenticated
+  addUserToRequestAndLocals,
+  requireAuthForPage,
+  requireAuthForApi,
 };
 
 module.exports = authJwt;

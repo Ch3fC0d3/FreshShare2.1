@@ -5,6 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const marketplaceController = require('../../controllers/marketplace.controller');
+const { requireAuthForApi } = require('../../middleware/authJwt');
 const multer = require('multer');
 const path = require('path');
 
@@ -35,10 +36,10 @@ const upload = multer({
   }
 });
 
-// Create a new listing
-router.post('/', upload.array('images', 5), marketplaceController.createListing);
+// Create a new listing (protected)
+router.post('/', requireAuthForApi, upload.array('images', 5), marketplaceController.createListing);
 
-// Get all listings with optional filtering
+// Get all listings with optional filtering (public)
 router.get('/', marketplaceController.getListings);
 
 // Search listings by keyword
@@ -64,10 +65,10 @@ router.get('/food-search', marketplaceController.searchFoodItems);
 // Get a single listing by ID
 router.get('/:id', marketplaceController.getListingById);
 
-// Update a listing
-router.put('/:id', marketplaceController.updateListing);
+// Update a listing (protected)
+router.put('/:id', requireAuthForApi, marketplaceController.updateListing);
 
-// Delete a listing
-router.delete('/:id', marketplaceController.deleteListing);
+// Delete a listing (protected)
+router.delete('/:id', requireAuthForApi, marketplaceController.deleteListing);
 
 module.exports = router;

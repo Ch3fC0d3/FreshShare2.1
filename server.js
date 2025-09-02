@@ -4,9 +4,8 @@ const expressLayouts = require('express-ejs-layouts');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const cookieParser = require('cookie-parser');
-const jwt = require('jsonwebtoken');
-const config = require('./config/auth.config');
 const fs = require('fs');
+const { addUserToRequestAndLocals, requireAuthForPage } = require('./middleware/authJwt');
 
 // Load environment variables from .env file
 const dotenv = require('dotenv');
@@ -135,40 +134,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// Token synchronization middleware - ensures tokens in Authorization headers are set as cookies
-app.use((req, res, next) => {
-  try {
-    // Check if there's an Authorization header but no token cookie
-    if (req.headers.authorization && (!req.cookies.token || req.cookies.token === 'undefined')) {
-      const authHeader = req.headers.authorization;
-      const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
-      
-      if (token && token !== 'undefined' && token !== 'null') {
-        // Try to verify the token before setting it as a cookie
-        try {
-          const decoded = jwt.verify(token, process.env.JWT_SECRET || "bezkoder-secret-key");
-          if (decoded && decoded.id) {
-            // Set the token as a cookie
-            res.cookie('token', token, {
-              httpOnly: true,
-              secure: process.env.NODE_ENV === 'production',
-              maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-              sameSite: 'lax',
-              path: '/'
-            });
-            console.log(`Set token cookie from Authorization header for user ID: ${decoded.id}`);
-          }
-        } catch (err) {
-          console.error('Error verifying token from Authorization header:', err.message);
-        }
-      }
-    }
-    next();
-  } catch (err) {
-    console.error('Token sync middleware error:', err);
-    next();
-  }
-});
+// Global middleware to add user to locals for all views
+app.use(addUserToRequestAndLocals);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -191,91 +158,6 @@ app.use(expressLayouts);
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.set('layout', 'layouts/layout');
-
-// Authentication middleware for views
-app.use(async (req, res, next) => {
-  try {
-    // Get token from various sources with better error handling
-    let token = null;
-    
-    // Check cookies first (most common for web pages)
-    if (req.cookies && req.cookies.token) {
-      token = req.cookies.token;
-    } 
-    // Then check authorization header (for API requests)
-    else if (req.headers.authorization) {
-      const authHeader = req.headers.authorization;
-      if (authHeader.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
-      } else {
-        token = authHeader;
-      }
-    } 
-    // Finally check query parameter (for special cases like redirects)
-    else if (req.query && req.query.token) {
-      token = req.query.token;
-      
-      // If token is in query, set it as a cookie for persistence
-      // This helps with redirects that include the token
-      res.cookie('token', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-        sameSite: 'lax',
-        path: '/'
-      });
-    }
-
-    if (token) {
-      try {
-        // Verify token using the same secret as in auth.config.js
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || "bezkoder-secret-key");
-        const User = require('./models/user.model');
-        const user = await User.findById(decoded.id).select('-password');
-        
-        if (user) {
-          // Add user data to locals for all views
-          res.locals.user = user;
-          console.log('User authenticated:', user.username, 'ID:', user._id); // Enhanced debug log
-          
-          // Check if token is close to expiration (less than 24 hours remaining)
-          // and renew it if needed
-          if (decoded.exp && decoded.exp - (Date.now() / 1000) < 24 * 60 * 60) {
-            console.log('Token close to expiration, renewing for user:', user.username);
-            
-            // Generate new token with fresh expiration (7 days)
-            const newToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET || "bezkoder-secret-key", {
-              expiresIn: 7 * 24 * 60 * 60 // 7 days
-            });
-            
-            // Set new token as cookie
-            res.cookie('token', newToken, {
-              httpOnly: true,
-              secure: process.env.NODE_ENV === 'production',
-              maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-              sameSite: 'lax',
-              path: '/'
-            });
-            
-            console.log('Token renewed successfully for user:', user.username);
-          }
-        } else {
-          console.log('Token valid but user not found in database');
-          res.clearCookie('token'); // Clear token if user doesn't exist
-        }
-      } catch (err) {
-        console.error('Token verification failed:', err);
-        res.clearCookie('token'); // Clear invalid token
-      }
-    } else {
-      console.log('No authentication token found');
-    }
-    next();
-  } catch (err) {
-    console.error('Auth middleware error:', err);
-    next();
-  }
-});
 
 // API Routes with error handling
 const wrapAsync = fn => (req, res, next) => {
@@ -370,7 +252,7 @@ app.get('/marketplace', async (req, res) => {
   }
 });
 
-app.get('/create-listing', (req, res) => {
+app.get('/create-listing', requireAuthForPage, (req, res) => {
   res.render('pages/create-listing', { 
     title: 'FreshShare - Create Listing'
   });
@@ -388,7 +270,7 @@ app.get('/groups', (req, res) => {
   });
 });
 
-app.get('/create-group', (req, res) => {
+app.get('/create-group', requireAuthForPage, (req, res) => {
   res.render('pages/create-group', { 
     title: 'FreshShare - Create New Group'
   });
@@ -434,112 +316,23 @@ app.get('/contact', (req, res) => {
   });
 });
 
-app.get('/profile', async (req, res) => {
-  try {
-    // Check if user is logged in
-    if (!res.locals.user) {
-      console.log('Profile access attempted without authentication, redirecting to login');
-      return res.redirect('/login?redirect=/profile&error=' + encodeURIComponent('Please log in to view your profile'));
-    }
-
-    // User is logged in, use their data
-    const userData = res.locals.user;
-    console.log(`Rendering profile page for user: ${userData.username} (${userData._id})`);
-
-    // Add debug information
-    console.log('User data available:', {
-      id: userData._id,
-      username: userData.username,
-      email: userData.email
-    });
-
-    // Ensure userData is properly formatted for the template
-    const formattedUserData = {
-      _id: userData._id,
-      username: userData.username,
-      email: userData.email,
-      firstName: userData.firstName || '',
-      lastName: userData.lastName || '',
-      profileImage: userData.profileImage || '/assets/images/avatar-placeholder.jpg',
-      location: {
-        street: userData.location?.street || '',
-        city: userData.location?.city || '',
-        state: userData.location?.state || '',
-        zipCode: userData.location?.zipCode || ''
-      },
-      phoneNumber: userData.phoneNumber || ''
-    };
-
-    // Render the profile page with the user data
-    res.render('pages/profile', {
-      title: 'FreshShare - Profile',
-      user: formattedUserData
-    });
-  } catch (error) {
-    console.error('Profile page error:', error);
-    res.status(500).render('error', {
-      title: 'Error',
-      message: 'Failed to load profile page: ' + error.message
-    });
-  }
+// Protected page routes that require authentication
+app.get('/profile', requireAuthForPage, (req, res) => {
+  res.render('pages/profile', {
+    title: 'FreshShare - Profile',
+    user: req.user // user is attached by `addUserToRequestAndLocals`
+  });
 });
 
-app.get('/profile-edit', async (req, res) => {
-  try {
-    // Check if user is logged in
-    if (!res.locals.user) {
-      return res.redirect('/login');
-    }
-    
-    // Use the user data from locals
-    const userData = res.locals.user;
-
-    res.render('pages/profile-edit', {
-      title: 'FreshShare - Edit Profile',
-      user: userData
-    });
-  } catch (error) {
-    console.error('Profile edit page error:', error);
-    res.status(500).render('error', {
-      title: 'Error',
-      message: 'Failed to load profile edit page'
-    });
-  }
+app.get('/profile-edit', requireAuthForPage, (req, res) => {
+  res.render('pages/profile-edit', {
+    title: 'FreshShare - Edit Profile',
+    user: req.user
+  });
 });
 
-app.get('/dashboard', (req, res) => {
-  // Check if user is logged in
-  if (!res.locals.user) {
-    console.log('User not authenticated, redirecting to login with noRedirect flag');
-    return res.redirect('/login?noRedirect=true');
-  }
-  
-  console.log('User authenticated, rendering dashboard');
-  res.render('pages/dashboard', { 
+app.get('/dashboard', requireAuthForPage, (req, res) => {
+  res.render('pages/dashboard', {
     title: 'FreshShare - Dashboard'
   });
-});
-
-app.get('/login', (req, res) => {
-  // COMPLETELY DISABLE REDIRECTS to break the infinite loop
-  console.log('Rendering login page without any redirects');
-  
-  // Always render the login page regardless of authentication status
-  res.render('pages/login', { 
-    title: 'FreshShare - Login'
-  });
-});
-
-app.get('/signup', (req, res) => {
-  if (res.locals.user) {
-    return res.redirect('/dashboard');
-  }
-  res.render('pages/signup', { 
-    title: 'FreshShare - Sign Up'
-  });
-});
-
-app.get('/logout', (req, res) => {
-  res.clearCookie('token');
-  res.redirect('/');
 });
