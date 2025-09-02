@@ -89,11 +89,15 @@ mongoose.connection.on('disconnected', () => {
 });
 
 // Add a process exit handler to close MongoDB connection
-process.on('SIGINT', () => {
-  mongoose.connection.close(() => {
+process.on('SIGINT', async () => {
+  try {
+    await mongoose.connection.close();
     console.log('MongoDB connection closed through app termination');
     process.exit(0);
-  });
+  } catch (err) {
+    console.error('Error while closing MongoDB connection:', err);
+    process.exit(1);
+  }
 });
 
 // Initialize database with roles if needed

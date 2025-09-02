@@ -128,9 +128,11 @@ jobs:
 ```
 
 ### SSH Key Management
+
 The workflow uses SSH keys stored in GitHub secrets to securely connect to the cPanel server. The private key is retrieved from secrets and properly formatted for SSH authentication.
 
 ### Environment File Creation
+
 Environment files (.env) are created dynamically during the workflow execution, with sensitive values injected from GitHub secrets:
 
 ```yaml
