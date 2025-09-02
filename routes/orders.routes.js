@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { authJwt } = require('../middleware');
+const { requireAuthForApi } = require('../middleware/authJwt');
 const orderController = require('../controllers/order.controller');
 
-// Apply authentication middleware to all routes
-router.use(authJwt.verifyToken);
+// Apply authentication middleware to all routes in this file
+router.use(requireAuthForApi);
 
 // Create a new order
 router.post('/', orderController.createOrder);

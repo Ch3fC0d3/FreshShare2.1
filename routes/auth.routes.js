@@ -1,21 +1,28 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
-const tokenController = require('../controllers/token.controller');
-const { authJwt } = require('../middleware');
+const { requireAuthForApi } = require('../middleware/authJwt');
 
 /**
  * Authentication Routes
  */
 
-// Page routes
+// Page routes for authentication
 router.get('/login', (req, res) => {
+    // If user is already logged in, redirect to the dashboard
+    if (req.user) {
+        return res.redirect('/dashboard');
+    }
     res.render('pages/login', { 
         title: 'FreshShare - Login'
     });
 });
 
 router.get('/signup', (req, res) => {
+    // If user is already logged in, redirect to the dashboard
+    if (req.user) {
+        return res.redirect('/dashboard');
+    }
     res.render('pages/signup', { 
         title: 'FreshShare - Sign Up'
     });
@@ -34,12 +41,9 @@ router.post('/api/auth/signup', authController.signup);
 router.post('/api/auth/login', authController.login);
 
 // Get user profile (protected route)
-router.get('/api/auth/profile', [authJwt.verifyToken], authController.getUserProfile);
+router.get('/api/auth/profile', requireAuthForApi, authController.getUserProfile);
 
 // Update user profile (protected route)
-router.put('/api/auth/profile', [authJwt.verifyToken], authController.updateUserProfile);
-
-// Sync token between localStorage and cookies
-router.post('/api/auth/sync-token', tokenController.syncToken);
+router.put('/api/auth/profile', requireAuthForApi, authController.updateUserProfile);
 
 module.exports = router;
