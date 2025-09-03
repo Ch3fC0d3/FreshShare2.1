@@ -8,66 +8,30 @@ const fs = require('fs');
 const { addUserToRequestAndLocals, requireAuthForPage } = require('./middleware/authJwt');
 
 // Load environment variables from .env file
-const dotenv = require('dotenv');
-const envPath = path.resolve(__dirname, '.env');
-console.log('Loading environment variables from:', envPath);
-if (fs.existsSync(envPath)) {
-  const result = dotenv.config({ path: envPath });
-  if (result.error) {
-    console.error('Error loading .env file:', result.error);
-  } else {
-    console.log('Successfully loaded environment variables');
-  }
-} else {
-  console.error('.env file not found at path:', envPath);
-  dotenv.config(); // Fallback to default dotenv behavior
-}
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Database configuration
-const dbConfig = require('./config/db.config.js');
-
-// Connect to MongoDB with retry logic
-console.log('Connecting to MongoDB...');
-    
-const connectWithRetry = async () => {
+// Connect to MongoDB
+const connectDB = async () => {
   try {
     await mongoose.connect(process.env.MONGODB_URI);
-    
     console.log('Successfully connected to MongoDB!');
-    console.log('Connection details:', {
-      host: mongoose.connection.host,
-      port: mongoose.connection.port,
-      name: mongoose.connection.name
-    });
     
     // Initialize database and start server
-    initializeDatabase();
-    startServer();
+    await initializeDatabase();
+    app.listen(PORT, () => {
+      console.log(`Server is running on http://localhost:${PORT}`);
+    });
   } catch (err) {
     console.error('MongoDB connection error:', err.message);
-    console.error('Connection details:', {
-      code: err.code,
-      name: err.name,
-      message: err.message
-    });
-    
-    // Retry connection after 5 seconds
     console.log('Retrying connection in 5 seconds...');
-    setTimeout(connectWithRetry, 5000);
+    setTimeout(connectDB, 5000);
   }
 };
 
-connectWithRetry();
-
-// Start server function
-function startServer() {
-  app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-  });
-}
+connectDB();
 
 // Add event listeners for MongoDB connection events
 mongoose.connection.on('connected', () => {
@@ -160,9 +124,7 @@ app.set('views', path.join(__dirname, 'views'));
 app.set('layout', 'layouts/layout');
 
 // API Routes with error handling
-const wrapAsync = fn => (req, res, next) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
-};
+const asyncHandler = require('./utils/asyncHandler');
 
 // Auth routes (both pages and API)
 const authRoutes = require('./routes/auth.routes');
@@ -177,162 +139,5 @@ app.use('/api/groups', require('./routes/groups.routes'));
 app.use('/api/orders', require('./routes/orders.routes'));
 
 // Page Routes
-app.get('/', (req, res) => {
-  res.render('pages/index', { 
-    title: 'FreshShare - Home'
-  });
-});
-
-app.get('/marketplace', async (req, res) => {
-  try {
-    // Fetch listings from the database
-    const db = require('./models');
-    const Listing = db.listing;
-    
-    // Get query parameters for filtering
-    const { 
-      category, 
-      minPrice, 
-      maxPrice, 
-      isOrganic, 
-      sortBy = 'latest',
-      search
-    } = req.query;
-    
-    // Build filter object
-    const filter = {};
-    
-    if (category) filter.category = category;
-    if (isOrganic) filter.isOrganic = isOrganic === 'true';
-    if (minPrice || maxPrice) {
-      filter.price = {};
-      if (minPrice) filter.price.$gte = Number(minPrice);
-      if (maxPrice) filter.price.$lte = Number(maxPrice);
-    }
-    
-    // Add text search if search parameter is provided
-    if (search) {
-      filter.$text = { $search: search };
-    }
-    
-    // Build sort object
-    let sort = { createdAt: -1 }; // Default sort by newest
-    
-    if (sortBy === 'price-asc') sort = { price: 1 };
-    if (sortBy === 'price-desc') sort = { price: -1 };
-    
-    // Execute query
-    const listings = await Listing.find(filter)
-      .sort(sort)
-      .limit(12) // Limit to 12 listings for the page
-      .populate('seller', 'username profileImage');
-    
-    // Render the marketplace page with the listings
-    res.render('pages/marketplace', { 
-      title: 'FreshShare - Marketplace',
-      listings: listings || [],
-      filters: {
-        category,
-        minPrice,
-        maxPrice,
-        isOrganic,
-        sortBy,
-        search
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching marketplace listings:', error);
-    // Render the page with an empty listings array if there's an error
-    res.render('pages/marketplace', { 
-      title: 'FreshShare - Marketplace',
-      listings: [],
-      filters: {},
-      error: 'Failed to load marketplace listings'
-    });
-  }
-});
-
-app.get('/create-listing', requireAuthForPage, (req, res) => {
-  res.render('pages/create-listing', { 
-    title: 'FreshShare - Create Listing'
-  });
-});
-
-app.get('/forum', (req, res) => {
-  res.render('pages/forum', { 
-    title: 'FreshShare - Forum'
-  });
-});
-
-app.get('/groups', (req, res) => {
-  res.render('pages/groups', { 
-    title: 'FreshShare - Groups'
-  });
-});
-
-app.get('/create-group', requireAuthForPage, (req, res) => {
-  res.render('pages/create-group', { 
-    title: 'FreshShare - Create New Group'
-  });
-});
-
-app.get('/group-details', (req, res) => {
-  res.render('pages/group-details', { 
-    title: 'FreshShare - Group Details',
-    groupId: req.query.id
-  });
-});
-
-app.get('/groups/:id/shopping', (req, res) => {
-  res.render('pages/group_shopping', { 
-    title: 'FreshShare - Group Shopping',
-    groupId: req.params.id
-  });
-});
-
-app.get('/groups/:id/orders', (req, res) => {
-  res.render('pages/group_orders', { 
-    title: 'FreshShare - Group Orders',
-    groupId: req.params.id
-  });
-});
-
-app.get('/orders/:id', (req, res) => {
-  res.render('pages/order_details', { 
-    title: 'FreshShare - Order Details',
-    orderId: req.params.id
-  });
-});
-
-app.get('/about', (req, res) => {
-  res.render('pages/about', { 
-    title: 'FreshShare - About'
-  });
-});
-
-app.get('/contact', (req, res) => {
-  res.render('pages/contact', { 
-    title: 'FreshShare - Contact'
-  });
-});
-
-// Protected page routes that require authentication
-app.get('/profile', requireAuthForPage, (req, res) => {
-  res.render('pages/profile', {
-    title: 'FreshShare - Profile',
-    user: req.user // user is attached by `addUserToRequestAndLocals`
-  });
-});
-
-app.get('/profile-edit', requireAuthForPage, (req, res) => {
-  res.render('pages/profile-edit', {
-    title: 'FreshShare - Edit Profile',
-    user: req.user
-  });
-});
-
-app.get('/dashboard', requireAuthForPage, (req, res) => {
-  res.render('pages/dashboard', {
-    title: 'FreshShare - Dashboard'
-  });
-});
+const pageRoutes = require('./routes/pages.routes');
+app.use('/', pageRoutes);
