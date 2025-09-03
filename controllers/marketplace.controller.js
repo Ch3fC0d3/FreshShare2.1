@@ -73,6 +73,65 @@ exports.createListing = async (req, res) => {
 };
 
 /**
+ * Render the marketplace page with listings
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+exports.getMarketplacePage = async (req, res) => {
+  // Get query parameters for filtering
+  const {
+    category,
+    minPrice,
+    maxPrice,
+    isOrganic,
+    sortBy = 'latest',
+    search
+  } = req.query;
+
+  // Build filter object
+  const filter = {};
+
+  if (category) filter.category = category;
+  if (isOrganic) filter.isOrganic = isOrganic === 'true';
+  if (minPrice || maxPrice) {
+    filter.price = {};
+    if (minPrice) filter.price.$gte = Number(minPrice);
+    if (maxPrice) filter.price.$lte = Number(maxPrice);
+  }
+
+  // Add text search if search parameter is provided
+  if (search) {
+    filter.$text = { $search: search };
+  }
+
+  // Build sort object
+  let sort = { createdAt: -1 }; // Default sort by newest
+
+  if (sortBy === 'price-asc') sort = { price: 1 };
+  if (sortBy === 'price-desc') sort = { price: -1 };
+
+  // Execute query
+  const listings = await Listing.find(filter)
+    .sort(sort)
+    .limit(12) // Limit to 12 listings for the page
+    .populate('seller', 'username profileImage');
+
+  // Render the marketplace page with the listings
+  res.render('pages/marketplace', {
+    title: 'FreshShare - Marketplace',
+    listings: listings || [],
+    filters: {
+      category,
+      minPrice,
+      maxPrice,
+      isOrganic,
+      sortBy,
+      search
+    }
+  });
+};
+
+/**
  * Get all marketplace listings with optional filtering
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
